@@ -1,0 +1,5 @@
+# Local data
+
+SQLite and OAuth tokens live here at runtime. Both are listed in `.gitignore`.
+
+Optional: place `credentials.json` from Google Cloud Console in `data/` (same folder name as `GMAIL_CREDENTIALS_PATH`).

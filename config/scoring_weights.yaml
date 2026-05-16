@@ -1,0 +1,24 @@
+weights:
+  technical_skill_match: 0.30
+  industry_interest_alignment: 0.25
+  experience_level_fit: 0.20
+  location_remote_preference: 0.10
+  company_project_relevance: 0.10
+  ease_of_application: 0.05
+
+tiers:
+  - { min: 85, code: strong_apply, label: "Strong Apply" }
+  - { min: 70, code: apply, label: "Apply" }
+  - { min: 55, code: maybe, label: "Maybe" }
+  - { min: 0, code: skip, label: "Skip" }
+
+application_difficulty:
+  easy_hosts:
+    - greenhouse.io
+    - lever.co
+    - ashbyhq.com
+    - myworkdayjobs.com
+  medium_keywords:
+    - "additional questions"
+    - "cover letter required"
+    - "portfolio"

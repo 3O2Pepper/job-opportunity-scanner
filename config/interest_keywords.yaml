@@ -1,0 +1,119 @@
+# Keyword groups for industry/interest scoring (edit freely)
+interest_groups:
+  aerospace:
+    weight: 1.2
+    terms:
+      - aerospace
+      - aircraft
+      - spacecraft
+      - aviation
+      - aerodynamics
+      - flight sciences
+  propulsion:
+    weight: 1.2
+    terms:
+      - propulsion
+      - rocket
+      - turbomachinery
+      - combustion
+      - propellant
+      - jet engine
+  mechanical:
+    weight: 1.0
+    terms:
+      - mechanical engineering
+      - structures
+      - finite element
+      - fea
+      - cad
+      - solidworks
+      - nx
+      - catia
+  robotics:
+    weight: 1.0
+    terms:
+      - robotics
+      - mechatronics
+      - controls
+      - autonomy
+      - motion planning
+  manufacturing:
+    weight: 0.9
+    terms:
+      - manufacturing
+      - machining
+      - composites
+      - additive manufacturing
+      - cnc
+  energy:
+    weight: 1.0
+    terms:
+      - renewable energy
+      - geothermal
+      - energy systems
+      - thermal systems
+      - hvac
+      - power generation
+  defense:
+    weight: 1.0
+    terms:
+      - defense
+      - dod
+      - cleared
+      - security clearance
+      - missile
+
+role_preferences:
+  internship_terms:
+    - internship
+    - intern
+    - co-op
+    - cooperative education
+  early_career_terms:
+    - entry level
+    - new grad
+    - graduate engineer
+    - engineer i
+    - associate engineer
+
+skill_synonyms:
+  cfd:
+    - computational fluid dynamics
+    - fluent
+    - star-ccm
+  fea:
+    - finite element analysis
+    - nastran
+    - abaqus
+  cad:
+    - solidworks
+    - nx unigraphics
+    - catia
+
+# Used when job descriptions are short (typical for email alerts) to avoid near-zero skill match.
+sparse_signal_terms:
+  engineering_terms:
+    - aerospace
+    - mechanical engineering
+    - mechanical engineer
+    - manufacturing
+    - propulsion
+    - internship
+    - intern
+    - co-op
+    - aerodynamics
+    - cfd
+    - fea
+    - robotics
+    - systems engineer
+    - design engineer
+    - test engineer
+    - research engineer
+    - fluids
+    - structures
+    - thermal
+    - spacecraft
+    - aircraft
+    - flight test
+    - wind tunnel
+
