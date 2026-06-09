@@ -269,17 +269,28 @@ def ingest_manual_text(session, text: str, title_hint: str | None = None) -> Job
 
 
 def ingest_manual_link(session, url: str, fetch_body: bool = True) -> Job:
+    parsed_url = urlparse(url.strip())
+    if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+        raise ValueError("URL must start with http:// or https:// and include a host.")
+
     body = ""
+    fetch_error: str | None = None
     if fetch_body:
         try:
             html = fetch_public_job_page(url)
             body = strip_html(html)
-        except Exception:
+        except Exception as exc:
+            fetch_error = str(exc)
             body = ""
     raw = body or url
-    parsed = urlparse(url)
-    company_guess = parsed.netloc.replace("www.", "")
+    company_guess = parsed_url.netloc.replace("www.", "")
     dh = make_dedupe_hash(None, url, None, company_guess, 0, raw)
+    debug_json = None
+    if fetch_error:
+        debug_json = json.dumps(
+            {"fetch_error": fetch_error, "url": url},
+            ensure_ascii=False,
+        )
     job = build_job_record(
         title=None,
         company=company_guess,
@@ -292,6 +303,7 @@ def ingest_manual_link(session, url: str, fetch_body: bool = True) -> Job:
         raw_description_text=raw[:50_000],
         email_row=None,
         dedupe_hash=dh,
+        extraction_debug_json=debug_json,
     )
     j, _ = upsert_job(session, job)
     maybe_enrich_job_with_llm(j)

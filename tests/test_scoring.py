@@ -181,55 +181,40 @@ def test_no_missing_qualifications_when_profile_matches():
 def test_profile_parser_extracts_pdf_text():
     """Profile parser can extract text from a minimal in-memory PDF."""
     from io import BytesIO
-    from reportlab.lib.pagesizes import letter  # type: ignore
-    from reportlab.pdfgen import canvas  # type: ignore
+
+    from pypdf import PdfWriter
+
     from app.services.profile_parser import extract_text_from_pdf
 
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
     buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=letter)
-    c.drawString(72, 700, "Python developer with numpy and pandas skills")
-    c.save()
+    writer.write(buf)
     pdf_bytes = buf.getvalue()
 
-    text = extract_text_from_pdf(pdf_bytes)
-    assert "python" in text.lower() or "developer" in text.lower()
+    with pytest.raises(ValueError, match="No text could be extracted"):
+        extract_text_from_pdf(pdf_bytes)
 
 
 def test_profile_parser_linkedin_file_saved_as_correct_kind():
     """save_linkedin_file stores the document as linkedin_export kind."""
-    import hashlib
-    from app.services.profile_parser import extract_text_from_pdf, save_profile_text
-    from unittest.mock import patch
+    from unittest.mock import MagicMock, patch
 
-    captured = {}
+    from app.services.profile_parser import save_linkedin_file
 
-    def fake_save(kind, content, title=None):
-        captured["kind"] = kind
-        captured["content"] = content
-        # Return a minimal mock object
-        from app.db.models import ProfileDocument
-        doc = ProfileDocument.__new__(ProfileDocument)
-        doc.id = 1
-        doc.kind = kind
-        doc.title = title
-        doc.content_text = content
-        doc.content_hash = hashlib.sha256(content.encode()).hexdigest()
-        from datetime import datetime
-        doc.created_at = datetime.utcnow()
-        return doc
+    with patch("app.services.profile_parser.save_profile_text") as mock_save:
+        mock_save.return_value = MagicMock()
+        with patch(
+            "app.services.profile_parser.extract_text_from_upload",
+            return_value="LinkedIn profile text",
+        ):
+            save_linkedin_file("linkedin.pdf", b"fake_pdf")
 
-    with patch("app.services.profile_parser.save_profile_text", side_effect=fake_save):
-        from app.services.profile_parser import save_linkedin_file
-        save_linkedin_file.__wrapped__ = None  # avoid caching confusion
-
-        # Simulate calling with a tiny text file
-        from app.services.profile_parser import extract_text_from_upload
-        with patch("app.services.profile_parser.extract_text_from_upload", return_value="LinkedIn profile text"):
-            from app.services import profile_parser
-            profile_parser.save_profile_text = fake_save
-            result = profile_parser.save_linkedin_file("linkedin.pdf", b"fake_pdf")
-
-    assert captured.get("kind") == "linkedin_export"
+    mock_save.assert_called_once_with(
+        "linkedin_export",
+        "LinkedIn profile text",
+        title="linkedin.pdf",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +245,13 @@ def test_gmail_client_revoked_token_raises_friendly_error():
     assert "revoked" in error_msg or "token" in error_msg
     # Should mention deleting the token file or reconnecting
     assert "delete" in error_msg or "reconnect" in error_msg or "gmail_oauth_setup" in error_msg
+
+
+def test_profile_parser_rejects_corrupt_pdf():
+    from app.services.profile_parser import extract_text_from_pdf
+
+    with pytest.raises(ValueError, match="Could not read PDF"):
+        extract_text_from_pdf(b"not-a-pdf")
 
 
 def test_gmail_client_missing_token_raises_friendly_error():

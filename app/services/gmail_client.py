@@ -26,7 +26,17 @@ def load_credentials(interactive: bool = False) -> Credentials:
 
     creds: Credentials | None = None
     if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+        except (ValueError, OSError) as exc:
+            raise RuntimeError(
+                "Gmail token file is missing, corrupt, or unreadable.\n\n"
+                "To reconnect Gmail:\n"
+                f"  1. Delete the token file:  {token_path}\n"
+                "  2. Run:  python scripts/gmail_oauth_setup.py\n"
+                "  3. Complete the Google OAuth consent screen in your browser.\n\n"
+                f"Underlying error: {exc}"
+            ) from exc
 
     if creds and creds.valid:
         return creds

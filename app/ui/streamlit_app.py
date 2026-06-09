@@ -229,10 +229,13 @@ def _render_profile_tab() -> None:
         )
         if resume_upload is not None:
             if st.button("Save uploaded resume", key="profile_save_resume_upload"):
-                data = resume_upload.read()
-                save_profile_file(resume_upload.name, data)
-                _flash(f"Saved resume file: {resume_upload.name}")
-                st.rerun()
+                try:
+                    data = resume_upload.read()
+                    save_profile_file(resume_upload.name, data)
+                    _flash(f"Saved resume file: {resume_upload.name}")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
 
     with resume_col2:
         st.text_area("Or paste resume text", key="profile_resume_text", height=150)
@@ -256,10 +259,13 @@ def _render_profile_tab() -> None:
         )
         if linkedin_upload is not None:
             if st.button("Save LinkedIn file", key="profile_save_linkedin_upload"):
-                data = linkedin_upload.read()
-                save_linkedin_file(linkedin_upload.name, data)
-                _flash(f"Saved LinkedIn export: {linkedin_upload.name}")
-                st.rerun()
+                try:
+                    data = linkedin_upload.read()
+                    save_linkedin_file(linkedin_upload.name, data)
+                    _flash(f"Saved LinkedIn export: {linkedin_upload.name}")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
 
     with li_col2:
         st.text_area("Or paste LinkedIn profile text", key="profile_linkedin_text", height=150)
@@ -381,7 +387,7 @@ def _render_recommendations_tab(role_focus: str) -> None:
         rows.append(
             {
                 "ID": j.id,
-                "Score": f"{j.score_total:.0f}" if j.score_total is not None else "—",
+                "Score": j.score_total,
                 "Recommendation": tier_label,
                 "Title": j.title or "—",
                 "Company": j.company or "—",
@@ -404,7 +410,7 @@ def _render_recommendations_tab(role_focus: str) -> None:
         hide_index=True,
         column_config={
             "Apply": st.column_config.LinkColumn("Apply", display_text="Apply ↗"),
-            "Score": st.column_config.NumberColumn("Score", format="%.0f"),
+            "Score": st.column_config.NumberColumn("Score", format="%.0f", min_value=0, max_value=100),
         },
     )
 
@@ -573,13 +579,16 @@ def main() -> None:
         if st.button("Sync Gmail now", key="sidebar_sync"):
             try:
                 with session_scope() as session:
-                    synced, created = sync_gmail_for_jobs(
+                    synced, created, skipped = sync_gmail_for_jobs(
                         session,
                         query=final_query,
                         max_results=int(max_res),
                         interactive_oauth=oauth_help,
                     )
-                st.success(f"Synced {synced} messages; created ~{created} new job rows.")
+                msg = f"Synced {synced} messages; created ~{created} new job rows."
+                if skipped:
+                    msg += f" ({skipped} message(s) skipped due to fetch/parse errors.)"
+                st.success(msg)
                 recompute_scores(role_focus=role_focus)
                 st.rerun()
             except RuntimeError as exc:
@@ -638,10 +647,19 @@ def main() -> None:
         url = st.text_input("Job posting URL (public page you are allowed to fetch)", key="manual_url")
         fetch_body = st.checkbox("Fetch page text (GET)", value=True, key="manual_fetch_body")
         if st.button("Add URL job", key="manual_add_url") and url.strip():
-            with session_scope() as session:
-                ingest_manual_link(session, url.strip(), fetch_body=fetch_body)
-            recompute_scores(role_focus=role_focus)
-            st.success("Job ingested from URL.")
+            try:
+                with session_scope() as session:
+                    job = ingest_manual_link(session, url.strip(), fetch_body=fetch_body)
+                recompute_scores(role_focus=role_focus)
+                if job.extraction_debug_json and "fetch_error" in job.extraction_debug_json:
+                    st.warning(
+                        "Job saved from URL, but the page body could not be fetched. "
+                        "Scoring will use the URL only."
+                    )
+                else:
+                    st.success("Job ingested from URL.")
+            except ValueError as exc:
+                st.error(str(exc))
 
     with tabs[3]:
         st.subheader("Export filtered jobs")

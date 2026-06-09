@@ -174,10 +174,10 @@ def sync_gmail_for_jobs(
     query: str | None = None,
     max_results: int | None = None,
     interactive_oauth: bool = False,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """
     List messages matching query, fetch bodies, store EmailMessage rows, extract Jobs.
-    Returns (messages_synced, jobs_created).
+    Returns (messages_synced, jobs_created, messages_skipped).
     """
     q = query if query is not None else settings.gmail_query
     max_res = max_results if max_results is not None else settings.gmail_sync_max_results
@@ -188,28 +188,36 @@ def sync_gmail_for_jobs(
 
     synced = 0
     jobs_created = 0
+    skipped = 0
     last_history_id = resp.get("historyId")
 
     for m in messages:
-        mid = m["id"]
-        full = (
-            service.users()
-            .messages()
-            .get(userId="me", id=mid, format="full")
-            .execute()
-        )
-        payload = full.get("payload", {})
-        plain, html = extract_plain_and_html(payload)
-        email_row = upsert_email_row(session, m, full)
-        created = ingest_email_message(
-            session,
-            email_row=email_row,
-            subject=email_row.subject or "",
-            plain_body=plain,
-            html_body=html,
-        )
-        jobs_created += created
-        synced += 1
+        mid = m.get("id")
+        if not mid:
+            skipped += 1
+            continue
+        try:
+            full = (
+                service.users()
+                .messages()
+                .get(userId="me", id=mid, format="full")
+                .execute()
+            )
+            payload = full.get("payload", {})
+            plain, html = extract_plain_and_html(payload)
+            email_row = upsert_email_row(session, m, full)
+            created = ingest_email_message(
+                session,
+                email_row=email_row,
+                subject=email_row.subject or "",
+                plain_body=plain,
+                html_body=html,
+            )
+            jobs_created += created
+            synced += 1
+        except Exception:
+            skipped += 1
+            continue
 
     update_sync_state(session, q, history_id=str(last_history_id) if last_history_id else None)
-    return synced, jobs_created
+    return synced, jobs_created, skipped

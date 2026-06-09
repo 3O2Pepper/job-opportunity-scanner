@@ -21,16 +21,38 @@ def _sha256(text: str) -> str:
 
 
 def extract_text_from_pdf(data: bytes) -> str:
-    reader = PdfReader(BytesIO(data))
+    if not data:
+        raise ValueError("Uploaded PDF is empty.")
+    try:
+        reader = PdfReader(BytesIO(data))
+    except Exception as exc:
+        raise ValueError(f"Could not read PDF: {exc}") from exc
     parts: list[str] = []
     for page in reader.pages:
         parts.append(page.extract_text() or "")
-    return "\n".join(parts).strip()
+    text = "\n".join(parts).strip()
+    if not text:
+        raise ValueError(
+            "No text could be extracted from this PDF. "
+            "Try pasting the resume text instead, or use a text-based PDF export."
+        )
+    return text
 
 
 def extract_text_from_docx(data: bytes) -> str:
-    doc = DocxDocument(BytesIO(data))
-    return "\n".join(p.text for p in doc.paragraphs).strip()
+    if not data:
+        raise ValueError("Uploaded DOCX is empty.")
+    try:
+        doc = DocxDocument(BytesIO(data))
+    except Exception as exc:
+        raise ValueError(f"Could not read DOCX: {exc}") from exc
+    text = "\n".join(p.text for p in doc.paragraphs).strip()
+    if not text:
+        raise ValueError(
+            "No text could be extracted from this DOCX. "
+            "Try pasting the resume text instead."
+        )
+    return text
 
 
 def extract_text_from_upload(filename: str, data: bytes) -> str:

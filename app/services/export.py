@@ -312,7 +312,7 @@ def export_pdf_bytes(jobs: list[Job]) -> bytes:
         _pdf_multi_cell(pdf, f"Snippet: {snippet}", 5, style="I", size=9)
         pdf.ln(3)
 
-    data = pdf.output(dest="S")
+    data = pdf.output()
     if isinstance(data, str):
         return data.encode("latin-1")
     return bytes(data)
