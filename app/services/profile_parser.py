@@ -79,11 +79,18 @@ def infer_years_experience_band(text: str) -> str:
     return "general"
 
 
-def build_structured_profile(merged_text: str) -> dict:
+def extract_career_goals_text(docs: list[ProfileDocument]) -> str:
+    """Return the concatenated text of all ``preferences`` documents."""
+    parts = [d.content_text for d in docs if d.kind == "preferences"]
+    return "\n".join(parts).strip()
+
+
+def build_structured_profile(merged_text: str, career_goals: str = "") -> dict:
     return {
         "skills": infer_skills_from_text(merged_text),
         "experience_band": infer_years_experience_band(merged_text),
         "raw_length": len(merged_text),
+        "career_goals": career_goals,
     }
 
 
@@ -100,7 +107,8 @@ def merge_profile_documents(docs: list[ProfileDocument]) -> str:
 def refresh_profile_snapshot(session) -> ProfileSnapshot:
     docs = session.scalars(select(ProfileDocument).order_by(ProfileDocument.id.asc())).all()
     merged = merge_profile_documents(docs) if docs else ""
-    structured = build_structured_profile(merged) if merged else {}
+    career_goals = extract_career_goals_text(docs) if docs else ""
+    structured = build_structured_profile(merged, career_goals=career_goals) if merged else {}
     snap = session.scalar(
         select(ProfileSnapshot).order_by(ProfileSnapshot.id.desc()).limit(1)
     )
@@ -141,6 +149,77 @@ def save_profile_text(kind: str, content: str, title: str | None = None) -> Prof
 
 
 def save_profile_file(filename: str, data: bytes) -> ProfileDocument:
+    """Save an uploaded resume (PDF/DOCX/TXT) as ``resume_file`` kind."""
     text = extract_text_from_upload(filename, data)
     title = Path(filename).name
     return save_profile_text("resume_file", text, title=title)
+
+
+def save_linkedin_file(filename: str, data: bytes) -> ProfileDocument:
+    """Save an uploaded LinkedIn PDF/export as ``linkedin_export`` kind."""
+    text = extract_text_from_upload(filename, data)
+    title = Path(filename).name
+    return save_profile_text("linkedin_export", text, title=title)
+
+
+def save_career_goals(goals_text: str) -> ProfileDocument:
+    """Save career goals and preferences as ``preferences`` kind."""
+    return save_profile_text("preferences", goals_text.strip())
+
+
+def list_profile_documents() -> list[dict]:
+    """Return a UI-friendly summary of every stored profile document."""
+    with session_scope() as session:
+        docs = session.scalars(
+            select(ProfileDocument).order_by(ProfileDocument.created_at.desc())
+        ).all()
+        return [
+            {
+                "id": d.id,
+                "kind": d.kind,
+                "title": d.title or "",
+                "length": len(d.content_text or ""),
+                "created_at": d.created_at,
+                "hash_short": (d.content_hash or "")[:10],
+                "preview": (d.content_text or "")[:240],
+            }
+            for d in docs
+        ]
+
+
+def delete_profile_document(doc_id: int) -> bool:
+    """Delete a single ProfileDocument and refresh the snapshot. Returns True if deleted."""
+    with session_scope() as session:
+        doc = session.get(ProfileDocument, doc_id)
+        if doc is None:
+            return False
+        session.delete(doc)
+        session.commit()
+        refresh_profile_snapshot(session)
+        return True
+
+
+def current_snapshot_summary() -> dict | None:
+    """Return a small dict describing the latest ProfileSnapshot, or None."""
+    with session_scope() as session:
+        snap = session.scalar(
+            select(ProfileSnapshot).order_by(ProfileSnapshot.id.desc()).limit(1)
+        )
+        if snap is None:
+            return None
+        structured: dict = {}
+        if snap.structured_json:
+            try:
+                structured = json.loads(snap.structured_json)
+            except json.JSONDecodeError:
+                structured = {}
+        return {
+            "id": snap.id,
+            "updated_at": snap.updated_at,
+            "merged_length": len(snap.merged_text or ""),
+            "raw_length": int(structured.get("raw_length") or 0),
+            "experience_band": str(structured.get("experience_band") or "general"),
+            "skills": list(structured.get("skills") or []),
+            "career_goals": str(structured.get("career_goals") or ""),
+            "merged_preview": (snap.merged_text or "")[:600],
+        }

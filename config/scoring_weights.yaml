@@ -1,10 +1,11 @@
 weights:
-  technical_skill_match: 0.30
-  industry_interest_alignment: 0.25
-  experience_level_fit: 0.20
-  location_remote_preference: 0.10
-  company_project_relevance: 0.10
-  ease_of_application: 0.05
+  technical_skill_match: 0.28
+  industry_interest_alignment: 0.20
+  experience_level_fit: 0.18
+  role_focus_match: 0.15
+  location_remote_preference: 0.09
+  company_project_relevance: 0.07
+  ease_of_application: 0.03
 
 tiers:
   - { min: 85, code: strong_apply, label: "Strong Apply" }

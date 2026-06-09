@@ -112,7 +112,62 @@ def score_technical_match(profile_skills: set[str], job_text: str, req_json: str
     return round(min(100.0, base), 1)
 
 
-def score_industry_interest(job_blob: str, weights_cfg: dict | None = None) -> float:
+_INTERNSHIP_TERMS = (
+    "intern", "internship", "co-op", "coop", "student", "summer program",
+    "early talent", "summer intern", "undergrad", "undergraduate",
+)
+_ENTRY_LEVEL_TERMS = (
+    "entry level", "entry-level", "new grad", "new graduate", "recent graduate",
+    "early career", "associate", "junior", "0-2 years", "0 to 2 years",
+)
+
+
+def score_role_focus(role_focus: str, job_blob: str, years_min: int | None = None) -> float:
+    """Score how well the job matches the role-focus mode (0–100).
+
+    Parameters
+    ----------
+    role_focus:
+        One of ``"Internships"``, ``"Entry-level"``, or ``"Any role"``.
+    job_blob:
+        Combined text of the job for keyword matching.
+    years_min:
+        Minimum years of experience required, if extracted.
+    """
+    text = job_blob.lower()
+
+    if role_focus == "Internships":
+        if any(t in text for t in _INTERNSHIP_TERMS):
+            base = 95.0
+        elif any(t in text for t in _ENTRY_LEVEL_TERMS):
+            base = 55.0
+        else:
+            base = 30.0
+        # Penalise if too many years of experience required
+        if years_min is not None and years_min >= 3:
+            base = max(10.0, base - (years_min - 2) * 15.0)
+        return round(min(100.0, base), 1)
+
+    if role_focus == "Entry-level":
+        if any(t in text for t in _ENTRY_LEVEL_TERMS):
+            base = 95.0
+        elif any(t in text for t in _INTERNSHIP_TERMS):
+            base = 60.0
+        else:
+            base = 45.0
+        if years_min is not None and years_min >= 4:
+            base = max(15.0, base - (years_min - 3) * 12.0)
+        return round(min(100.0, base), 1)
+
+    # "Any role" — neutral
+    return 65.0
+
+
+def score_industry_interest(
+    job_blob: str,
+    weights_cfg: dict | None = None,
+    career_goals: str = "",
+) -> float:
     cfg = weights_cfg or load_interests()
     groups = cfg.get("interest_groups") or {}
     total_w = 0.0
@@ -134,6 +189,14 @@ def score_industry_interest(job_blob: str, weights_cfg: dict | None = None) -> f
         intern_terms = role_prefs.get("internship_terms") or []
         if any(str(t).lower() in text for t in intern_terms):
             val = min(100.0, val + 14.0)
+
+    # Boost when job keywords appear in user's career goals
+    if career_goals:
+        goals_lower = career_goals.lower()
+        goal_words = set(w for w in goals_lower.split() if len(w) > 3)
+        hits_in_goals = sum(1 for w in goal_words if w in text)
+        val = min(100.0, val + min(12.0, hits_in_goals * 2.0))
+
     return round(val, 1)
 
 
@@ -170,8 +233,15 @@ def score_experience_fit(profile_band: str, job_min: int | None, job_blob: str) 
     return max(35.0, 95.0 - max(0, job_min - 2) * 10.0)
 
 
-def score_location_remote(merged_profile: str, job_mode: str | None, job_location: str | None, job_blob: str) -> float:
-    mp = merged_profile.lower()
+def score_location_remote(
+    merged_profile: str,
+    job_mode: str | None,
+    job_location: str | None,
+    job_blob: str,
+    career_goals: str = "",
+) -> float:
+    combined = f"{merged_profile}\n{career_goals}".lower()
+    mp = combined
     prefers_remote = "remote" in mp and "not remote" not in mp
     open_reloc = any(x in mp for x in ("relocat", "relocate", "willing to move"))
 
@@ -288,7 +358,12 @@ def estimate_application_difficulty(job_url: str | None, job_blob: str, weights:
     return "Medium–Hard"
 
 
-def score_job_row(job: Job, profile: ProfileSnapshot | None, weights_doc: dict | None = None) -> dict:
+def score_job_row(
+    job: Job,
+    profile: ProfileSnapshot | None,
+    weights_doc: dict | None = None,
+    role_focus: str = "Internships",
+) -> dict:
     weights_doc = weights_doc or load_weights()
     wmap = weights_doc.get("weights") or {}
 
@@ -302,16 +377,18 @@ def score_job_row(job: Job, profile: ProfileSnapshot | None, weights_doc: dict |
 
     prof_skills = set(str(s).lower() for s in structured.get("skills") or [])
     band = str(structured.get("experience_band") or "general")
+    career_goals = str(structured.get("career_goals") or "")
 
     blob = scoring_context_blob(job)
 
     comp_scores = {
         "technical_skill_match": score_technical_match(prof_skills, blob, job.required_skills_json, job.preferred_skills_json),
-        "industry_interest_alignment": score_industry_interest(blob),
+        "industry_interest_alignment": score_industry_interest(blob, career_goals=career_goals),
         "experience_level_fit": score_experience_fit(band, job.years_experience_min, blob),
-        "location_remote_preference": score_location_remote(merged, job.work_mode, job.location, blob),
+        "location_remote_preference": score_location_remote(merged, job.work_mode, job.location, blob, career_goals=career_goals),
         "company_project_relevance": score_company_project(blob, job.company),
         "ease_of_application": score_ease_of_application(job.job_url, blob, weights_doc),
+        "role_focus_match": score_role_focus(role_focus, blob, job.years_experience_min),
     }
 
     total = 0.0
@@ -327,7 +404,13 @@ def score_job_row(job: Job, profile: ProfileSnapshot | None, weights_doc: dict |
 
     missing = compute_missing_qualifications(prof_skills, job.required_skills_json, job)
     keywords = suggest_resume_keywords(prof_skills, job.required_skills_json, job)
-    interests_hit = "aerospace and mechanical engineering impact"
+
+    # Derive a readable interests string from career_goals or fallback
+    if career_goals:
+        goals_words = [w for w in career_goals.split() if len(w) > 4][:6]
+        interests_hit = " ".join(goals_words) if goals_words else "your career goals"
+    else:
+        interests_hit = "your target field"
     bullets = suggest_cover_bullets(job.title, job.company, interests_hit)
 
     explain_parts = [
@@ -341,6 +424,7 @@ def score_job_row(job: Job, profile: ProfileSnapshot | None, weights_doc: dict |
     breakdown["tier_code"] = code
     breakdown["tier_label"] = label
     breakdown["explain_summary"] = reason
+    breakdown["snapshot_id"] = profile.id if profile is not None else None
 
     return {
         "total": total,
@@ -365,7 +449,10 @@ def apply_scores_to_job(job: Job, result: dict) -> None:
     job.application_difficulty = result["application_difficulty"]
 
 
-def recompute_scores(job_ids: list[int] | None = None) -> int:
+def recompute_scores(
+    job_ids: list[int] | None = None,
+    role_focus: str = "Internships",
+) -> int:
     """Re-score all jobs or a subset. Returns number of rows updated."""
     weights_doc = load_weights()
     updated = 0
@@ -376,11 +463,43 @@ def recompute_scores(job_ids: list[int] | None = None) -> int:
             q = q.where(Job.id.in_(job_ids))
         jobs = session.scalars(q).all()
         for job in jobs:
-            result = score_job_row(job, profile, weights_doc)
+            result = score_job_row(job, profile, weights_doc, role_focus=role_focus)
             apply_scores_to_job(job, result)
             updated += 1
         session.commit()
     return updated
+
+
+def count_stale_scores() -> tuple[int, int, int | None]:
+    """Return (stale, total_scored, current_snapshot_id).
+
+    A scored job is "stale" if its breakdown's stamped snapshot_id does not match
+    the current ProfileSnapshot. Unscored jobs are excluded from both counts.
+    """
+    stale = 0
+    total_scored = 0
+    with session_scope() as session:
+        snap = session.scalar(
+            select(ProfileSnapshot).order_by(ProfileSnapshot.id.desc()).limit(1)
+        )
+        current_id = snap.id if snap else None
+        jobs = session.scalars(
+            select(Job).where(Job.score_total.is_not(None))
+        ).all()
+        for j in jobs:
+            total_scored += 1
+            bid: int | None = None
+            if j.score_breakdown_json:
+                try:
+                    bd = json.loads(j.score_breakdown_json)
+                    bid = bd.get("snapshot_id")
+                    if bid is not None:
+                        bid = int(bid)
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    bid = None
+            if bid != current_id:
+                stale += 1
+    return stale, total_scored, current_id
 
 
 def alignment_summary(job: Job, profile: ProfileSnapshot | None) -> str:

@@ -21,9 +21,11 @@ class Settings(BaseSettings):
     gmail_query: str = (
         "(from:jobs-listings@linkedin.com OR from:linkedin.com OR subject:(job alert) "
         "OR subject:(internship) OR from:indeed.com OR from:glassdoor.com "
-        "OR from:handshake.com OR subject:(career)) newer_than:90d"
+        "OR from:handshake.com OR subject:(career)) newer_than:30d"
     )
     gmail_sync_max_results: int = 100
+    gmail_scan_days: int = 30
+    gmail_role_focus: str = "Internships"  # Internships | Entry-level | Any role
 
     enable_llm: bool = False
     llm_provider: str = "openai"  # openai | anthropic

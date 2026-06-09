@@ -1,19 +1,54 @@
+# ----- Secrets & environment -----
 .env
+.env.*
+!.env.example
+*.env
+
+# ----- Credentials, tokens & keys -----
+data/credentials.json
+data/tokens/
+credentials.json
+client_secret*.json
+*token*.json
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+.streamlit/secrets.toml
+
+# ----- Databases -----
+data/app.db
+*.db
+*.sqlite
+*.sqlite3
+
+# ----- Python -----
 __pycache__/
 *.py[cod]
 *$py.class
 .Python
 *.so
-.venv/
-venv/
-ENV/
-data/app.db
-data/tokens/
-data/credentials.json
 *.egg-info/
 .dist/
+build/
+dist/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+
+# ----- Virtual environments -----
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# ----- Editor / OS -----
 .idea/
 .vscode/
+.DS_Store
+Thumbs.db
+
+# ----- Logs -----
 *.log

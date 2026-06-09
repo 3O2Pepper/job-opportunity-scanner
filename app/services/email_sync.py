@@ -14,6 +14,60 @@ from app.db.models import EmailMessage, SyncState
 from app.services.gmail_client import build_gmail_service
 from app.services.job_extract import ingest_email_message
 
+# ---------------------------------------------------------------------------
+# Query builder
+# ---------------------------------------------------------------------------
+
+_BASE_SENDERS = (
+    "from:jobs-listings@linkedin.com OR from:linkedin.com OR from:indeed.com "
+    "OR from:glassdoor.com OR from:handshake.com"
+)
+
+_ROLE_FOCUS_TERMS: dict[str, str] = {
+    "Internships": (
+        "subject:(internship) OR subject:(intern) OR subject:(co-op) "
+        "OR subject:(coop) OR subject:(summer) OR subject:(student) "
+        "OR subject:(early talent) OR subject:(job alert) OR subject:(career)"
+    ),
+    "Entry-level": (
+        "subject:(entry level) OR subject:(new grad) OR subject:(early career) "
+        "OR subject:(associate) OR subject:(junior) OR subject:(job alert) OR subject:(career)"
+    ),
+    "Any role": (
+        "subject:(job alert) OR subject:(career) OR subject:(opportunity) "
+        "OR subject:(position) OR subject:(opening) OR subject:(internship)"
+    ),
+}
+
+
+def build_gmail_query(
+    days: int = 30,
+    role_focus: str = "Internships",
+    override: str | None = None,
+) -> str:
+    """Build a Gmail search query from scan parameters.
+
+    Parameters
+    ----------
+    days:
+        How many days back to scan (7–180). Defaults to 30.
+    role_focus:
+        One of ``"Internships"``, ``"Entry-level"``, or ``"Any role"``.
+    override:
+        If non-empty, returned verbatim (advanced query override).
+
+    Returns
+    -------
+    str
+        A valid Gmail search query string.
+    """
+    if override and override.strip():
+        return override.strip()
+
+    days = max(7, min(180, int(days)))
+    focus = _ROLE_FOCUS_TERMS.get(role_focus, _ROLE_FOCUS_TERMS["Internships"])
+    return f"({_BASE_SENDERS} OR {focus}) newer_than:{days}d"
+
 
 def _decode_body_part(part: dict) -> str:
     data = part.get("body", {}).get("data")

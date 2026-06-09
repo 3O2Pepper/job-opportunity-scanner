@@ -32,13 +32,30 @@ def load_credentials(interactive: bool = False) -> Credentials:
         return creds
 
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-        return creds
+        try:
+            creds.refresh(Request())
+            token_path.write_text(creds.to_json(), encoding="utf-8")
+            return creds
+        except Exception as exc:
+            # Token was revoked or refresh failed — surface a clear message.
+            raise RuntimeError(
+                "Gmail token has been revoked or is no longer valid.\n\n"
+                "To reconnect Gmail:\n"
+                f"  1. Delete the token file:  {token_path}\n"
+                "  2. Run:  python scripts/gmail_oauth_setup.py\n"
+                "  3. Complete the Google OAuth consent screen in your browser.\n\n"
+                f"Underlying error: {exc}"
+            ) from exc
 
     if not interactive:
         raise RuntimeError(
-            "Gmail token missing or expired. Run: python scripts/gmail_oauth_setup.py"
+            "Gmail token missing or expired.\n\n"
+            "To connect Gmail:\n"
+            f"  1. Ensure credentials.json exists at: {cred_path}\n"
+            "  2. Run:  python scripts/gmail_oauth_setup.py\n"
+            "  3. Complete the Google OAuth consent screen in your browser.\n\n"
+            "If you previously connected and the token stopped working, delete "
+            f"{token_path} and re-run the setup script."
         )
 
     if not cred_path.exists():
