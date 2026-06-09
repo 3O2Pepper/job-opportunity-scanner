@@ -224,6 +224,20 @@ This stores a refresh token at `data/tokens/gmail_token.json`. Scope used: `http
 
 Edit `GMAIL_QUERY` in `.env` to match senders and subjects in your inbox. The UI can also build queries from role focus and scan-window controls.
 
+## Run the app
+
+After dependencies are installed and Gmail is set up (if you use inbox sync), start the dashboard from the **project root**:
+
+```powershell
+cd "C:\Users\enzos\Documents\Job aplications"
+.\.venv\Scripts\activate
+streamlit run app/ui/streamlit_app.py
+```
+
+Change the `cd` path if you cloned the repo somewhere else. On macOS/Linux, activate with `source .venv/bin/activate` instead of `.\.venv\Scripts\activate`.
+
+The app opens in your browser (default: http://localhost:8501).
+
 ### 3. Configuration reference
 
 | Variable | Purpose |
