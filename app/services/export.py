@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
 from fpdf import FPDF
+from fpdf.enums import WrapMode, XPos, YPos
 from sqlalchemy import select
 
 from app.db.models import Job, ProfileSnapshot
@@ -193,17 +195,89 @@ def export_markdown(jobs: list[Job], title: str = "Job scan report") -> str:
 class _ReportPdf(FPDF):
     def header(self) -> None:
         self.set_font("Helvetica", "B", 12)
-        self.cell(0, 10, "Job scan report", new_x="LMARGIN", new_y="NEXT")
+        self.cell(self.epw, 10, "Job scan report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(4)
 
     def footer(self) -> None:
         self.set_y(-15)
+        self.set_x(self.l_margin)
         self.set_font("Helvetica", "I", 8)
-        self.cell(0, 10, f"Page {self.page_no()}", align="C")
+        self.cell(self.epw, 10, f"Page {self.page_no()}", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
-def _ascii_pdf_text(text: str) -> str:
-    return (text or "").encode("latin-1", errors="replace").decode("latin-1")
+_UNICODE_REPLACEMENTS: dict[str, str] = {
+    "\u2014": "-",
+    "\u2013": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2026": "...",
+    "\u00a0": " ",
+}
+
+_SOFT_HYPHEN = "\u00ad"
+_MAX_UNBROKEN_RUN = 100
+
+
+def _normalize_pdf_text(text: object) -> str:
+    """Make arbitrary job text safe for core Helvetica PDF fonts."""
+    if text is None:
+        return ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    elif not isinstance(text, str):
+        text = str(text)
+
+    for src, dst in _UNICODE_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = "".join(ch for ch in text if ch in "\n\t" or ord(ch) >= 32)
+    text = text.encode("latin-1", errors="replace").decode("latin-1")
+    return _insert_pdf_break_opportunities(text)
+
+
+def _insert_pdf_break_opportunities(text: str) -> str:
+    """Insert soft hyphens so WORD wrap can break URLs and very long tokens."""
+    text = re.sub(r"([/?&=#])", rf"\1{_SOFT_HYPHEN}", text)
+
+    def _split_long_run(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return _SOFT_HYPHEN.join(
+            token[i : i + _MAX_UNBROKEN_RUN] for i in range(0, len(token), _MAX_UNBROKEN_RUN)
+        )
+
+    return re.sub(rf"\S{{{_MAX_UNBROKEN_RUN + 1},}}", _split_long_run, text)
+
+
+def _pdf_multi_cell(
+    pdf: FPDF,
+    text: object,
+    line_height: float,
+    *,
+    style: str = "",
+    size: int | None = None,
+) -> None:
+    """Render a full-width text block using fpdf2-safe cursor and width settings."""
+    normalized = _normalize_pdf_text(text)
+    if not normalized.strip():
+        return
+
+    if size is not None:
+        pdf.set_font("Helvetica", style=style, size=size)
+    elif style:
+        pdf.set_font("Helvetica", style=style)
+
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(
+        pdf.epw,
+        line_height,
+        normalized,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+        wrapmode=WrapMode.WORD,
+    )
 
 
 def export_pdf_bytes(jobs: list[Job]) -> bytes:
@@ -211,21 +285,21 @@ def export_pdf_bytes(jobs: list[Job]) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Helvetica", size=10)
-    pdf.multi_cell(
-        0,
+    _pdf_multi_cell(
+        pdf,
+        f"Generated {datetime.utcnow().isoformat()} UTC\nJobs: {len(jobs)}",
         6,
-        _ascii_pdf_text(f"Generated {datetime.utcnow().isoformat()} UTC\nJobs: {len(jobs)}"),
     )
     pdf.ln(4)
 
     for job in jobs:
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.multi_cell(
-            0,
+        _pdf_multi_cell(
+            pdf,
+            f"{job.title or 'Untitled'} — {job.company or 'Unknown'}",
             6,
-            _ascii_pdf_text(f"{job.title or 'Untitled'} — {job.company or 'Unknown'}"),
+            style="B",
+            size=11,
         )
-        pdf.set_font("Helvetica", size=10)
         score = job.score_total if job.score_total is not None else 0.0
         body = (
             f"Score: {score:.1f} ({job.recommendation_tier})\n"
@@ -233,10 +307,9 @@ def export_pdf_bytes(jobs: list[Job]) -> bytes:
             f"Link: {job.job_url or 'n/a'}\n"
             f"Difficulty: {job.application_difficulty or 'n/a'}\n"
         )
-        pdf.multi_cell(0, 5, _ascii_pdf_text(body))
+        _pdf_multi_cell(pdf, body, 5, size=10)
         snippet = (job.raw_description_text or "")[:600].replace("\r", " ")
-        pdf.set_font("Helvetica", "I", 9)
-        pdf.multi_cell(0, 5, _ascii_pdf_text(f"Snippet: {snippet}"))
+        _pdf_multi_cell(pdf, f"Snippet: {snippet}", 5, style="I", size=9)
         pdf.ln(3)
 
     data = pdf.output(dest="S")
